@@ -649,22 +649,27 @@ function saveDB(monthKey) {
   _dbSaveQueue[key] = setTimeout(() => {
     delete _dbSaveQueue[key];
     const jsonData = JSON.stringify(db[key]);
-    const cbName = 'cbWriteDB_'+Date.now();
-    window[cbName] = function(res) {
-      delete window[cbName];
-      // save backup ใน localStorage ด้วย
-      try { localStorage.setItem('kb_db', JSON.stringify(db)); } catch(e) {}
-    };
-    const sc = document.createElement('script');
-    sc.src = APPS_URL + '?action=write_db&month_key=' + encodeURIComponent(key)
-           + '&json_data=' + encodeURIComponent(jsonData)
-           + '&callback=' + cbName;
-    sc.onerror = function() {
-      delete window[cbName];
-      // fallback: เก็บ localStorage ไว้ก่อน
-      try { localStorage.setItem('kb_db', JSON.stringify(db)); } catch(e) {}
-    };
-    document.body.appendChild(sc);
+    // บันทึก localStorage เป็น backup ก่อนเสมอ
+    try { localStorage.setItem('kb_db', JSON.stringify(db)); } catch(e) {}
+    // ใช้ fetch POST เพื่อรองรับข้อมูลใหญ่ (ไม่มี URL length limit)
+    // ส่ง body เป็น text/plain เพื่อหลีกเลี่ยง CORS preflight ของ Apps Script
+    fetch(APPS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'write_db', month_key: key, json_data: jsonData })
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res && res.status === 'ok') {
+        // saved to Sheets OK
+      } else {
+        console.warn('saveDB Sheets error:', res);
+      }
+    })
+    .catch(err => {
+      // CORS/network issue — data still in localStorage as backup
+      console.warn('saveDB fetch failed, data in localStorage only:', err);
+    });
   }, 800);
 }
 
